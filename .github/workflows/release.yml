@@ -22,7 +22,7 @@ jobs:
     name: Build and attach to GitHub Release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Verify tag matches pyproject version
         run: |
