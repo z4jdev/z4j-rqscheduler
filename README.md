@@ -4,51 +4,35 @@
 [![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg)](https://pypi.org/project/z4j-rqscheduler/)
 [![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
 
+The rq-scheduler adapter for [z4j](https://z4j.com).
 
-**License:** Apache 2.0
-**Status:** v2026.5 - first public release alongside `z4j-rq`.
-
-z4j scheduler-axis adapter for
-[rq-scheduler](https://github.com/rq/rq-scheduler). Pairs with
-`z4j-rq` the same way `z4j-celerybeat` pairs with `z4j-celery` -
-adds scheduled-job management to the dashboard Schedules page for
-projects that run RQ.
+Surfaces rq-scheduler periodic / interval / cron jobs on the
+dashboard's Schedules page — read, create, update, enable,
+disable, trigger, delete.
 
 ## Install
 
 ```bash
-pip install z4j[rq,rqscheduler]
-# or standalone:
-pip install z4j-rqscheduler
+pip install z4j-rq z4j-rqscheduler
 ```
 
-## Capabilities
+## Pairs with
 
-Advertised via the standard `SchedulerAdapter.capabilities()`
-contract:
+- [`z4j-rq`](https://github.com/z4jdev/z4j-rq) — engine adapter
 
-| Token | Status | Note |
-|---|---|---|
-| `list` | ✅ | Reads every scheduled job from the rq-scheduler Redis zset |
-| `enable` / `disable` | ✅ | via `Scheduler.enqueue_in(0, ...)` pause/resume pattern |
-| `trigger_now` | ✅ | `Scheduler.enqueue_in(timedelta(0), func, *args)` |
-| `delete` | ✅ | `Scheduler.cancel(job)` |
-| `create` / `update` | ⏸️ | Deferred to v1.1 - the UI surface for creating schedules lives on the Celery track first |
+## Documentation
 
-## See also
-
-- [`packages/z4j-rq/`](../z4j-rq/) - the engine adapter this pairs with.
-- [`docs/ADAPTER.md`](../../docs/ADAPTER.md) - generic adapter guide.
+Full docs at [z4j.dev/schedulers/rq-scheduler/](https://z4j.dev/schedulers/rq-scheduler/).
 
 ## License
 
-Apache 2.0 - see [LICENSE](LICENSE). This package is deliberately permissively licensed so that proprietary Django / Flask / FastAPI applications can import it without any license concerns.
+Apache-2.0 — see [LICENSE](LICENSE).
 
 ## Links
 
-- Homepage: <https://z4j.com>
-- Documentation: <https://z4j.dev>
-- Source: <https://github.com/z4jdev/z4j-rqscheduler>
-- Issues: <https://github.com/z4jdev/z4j-rqscheduler/issues>
+- Homepage: https://z4j.com
+- Documentation: https://z4j.dev
+- PyPI: https://pypi.org/project/z4j-rqscheduler/
+- Issues: https://github.com/z4jdev/z4j-rqscheduler/issues
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Security: `security@z4j.com` (see [SECURITY.md](SECURITY.md))
+- Security: security@z4j.com (see [SECURITY.md](SECURITY.md))
