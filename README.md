@@ -7,7 +7,7 @@
 The rq-scheduler adapter for [z4j](https://z4j.com).
 
 Surfaces rq-scheduler periodic / interval / cron jobs on the
-dashboard's Schedules page — read, create, update, enable, disable,
+dashboard's Schedules page, read, create, update, enable, disable,
 trigger, delete.
 
 ## What it ships
@@ -51,7 +51,7 @@ install_agent(
 
 ## Pairs with
 
-- [`z4j-rq`](https://github.com/z4jdev/z4j-rq) — engine adapter
+- [`z4j-rq`](https://github.com/z4jdev/z4j-rq), engine adapter
 
 ## Reliability
 
@@ -66,7 +66,7 @@ Full docs at [z4j.dev/schedulers/rq-scheduler/](https://z4j.dev/schedulers/rq-sc
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0, see [LICENSE](LICENSE).
 
 ## Links
 
