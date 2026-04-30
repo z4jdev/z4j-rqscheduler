@@ -11,6 +11,6 @@ from __future__ import annotations
 
 from z4j_rqscheduler.scheduler import RqSchedulerAdapter
 
-__version__ = "1.0.0"
+__version__ = "1.3.0"
 
 __all__ = ["RqSchedulerAdapter", "__version__"]
