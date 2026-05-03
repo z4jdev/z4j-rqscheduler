@@ -57,7 +57,7 @@ install_agent(
 
 - No exception from the adapter ever propagates back into rq-scheduler
   or your job code.
-- Schedule writes to Redis are atomic; if the brain is unreachable,
+- Schedule writes to Redis are atomic; if z4j is unreachable,
   the local Redis write is never affected.
 
 ## Documentation
