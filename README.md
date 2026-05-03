@@ -1,8 +1,8 @@
 # z4j-rqscheduler
 
-[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg)](https://pypi.org/project/z4j-rqscheduler/)
-[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg)](https://pypi.org/project/z4j-rqscheduler/)
-[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg?v=1.4.0)](https://pypi.org/project/z4j-rqscheduler/)
+[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg?v=1.4.0)](https://pypi.org/project/z4j-rqscheduler/)
+[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg?v=1.4.0)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
 
 The rq-scheduler adapter for [z4j](https://z4j.com).
 
