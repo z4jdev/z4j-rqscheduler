@@ -29,7 +29,7 @@ from z4j_core.models import CommandResult, Schedule, ScheduleKind
 
 from z4j_rqscheduler.capabilities import DEFAULT_CAPABILITIES
 
-logger = logging.getLogger("z4j.agent.rqscheduler.scheduler")
+logger = logging.getLogger("z4j.adapter.rqscheduler.scheduler")
 
 _NAME = "rq-scheduler"
 _ENGINE = "rq"
