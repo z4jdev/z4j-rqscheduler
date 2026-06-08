@@ -1,14 +1,21 @@
 # z4j-rqscheduler
 
-[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg?v=1.4.0)](https://pypi.org/project/z4j-rqscheduler/)
-[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg?v=1.4.0)](https://pypi.org/project/z4j-rqscheduler/)
-[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg?v=1.4.0)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg?v=1.6.7)](https://pypi.org/project/z4j-rqscheduler/)
+[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg?v=1.6.7)](https://pypi.org/project/z4j-rqscheduler/)
+[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg?v=1.6.7)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
 
 The rq-scheduler adapter for [z4j](https://z4j.com).
 
 Surfaces rq-scheduler periodic / interval / cron jobs on the
 dashboard's Schedules page, read, create, update, enable, disable,
 trigger, delete.
+
+## Compatibility
+
+- rq-scheduler 0.11+ (no upper cap)
+- Python 3.10+
+
+Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
 
 ## What it ships
 
