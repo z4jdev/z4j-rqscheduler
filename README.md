@@ -1,19 +1,18 @@
 # z4j-rqscheduler
 
-[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg?v=1.6.7)](https://pypi.org/project/z4j-rqscheduler/)
-[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg?v=1.6.7)](https://pypi.org/project/z4j-rqscheduler/)
-[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg?v=1.6.7)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg?v=1.7.0)](https://pypi.org/project/z4j-rqscheduler/)
+[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg?v=1.7.0)](https://pypi.org/project/z4j-rqscheduler/)
+[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg?v=1.7.0)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
 
 The rq-scheduler adapter for [z4j](https://z4j.com).
 
 Surfaces rq-scheduler periodic / interval / cron jobs on the
-dashboard's Schedules page, read, create, update, enable, disable,
-trigger, delete.
+dashboard's Schedules page, read, trigger, disable (cancel), delete.
 
 ## Compatibility
 
 - rq-scheduler 0.11+ (no upper cap)
-- Python 3.10+
+- Python 3.11+
 
 Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
 
@@ -22,12 +21,16 @@ Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
 | Capability | Notes |
 |---|---|
 | List schedules | every job rq-scheduler currently tracks |
-| Create schedule | interval / cron / one-shot |
-| Update | schedule expression, args, kwargs, queue |
-| Enable / disable | via re-add / cancel |
+| Disable | cancels the scheduled job (rq-scheduler has no enabled flag); re-enable by re-registering it from your code |
 | Trigger now | enqueues the task immediately, outside the schedule |
 | Delete | clean removal from the rq-scheduler set |
 | Boot inventory | full snapshot at agent connect; existing schedules show up without editing |
+
+Schedule **create** and **update** are not yet supported from the
+dashboard for rq-scheduler, so the brain greys those actions out.
+Define schedules in your project's Python entrypoint
+(`scheduler.cron(...)` / `scheduler.schedule(...)`); z4j surfaces them
+read-only once they exist.
 
 ## Install
 
@@ -40,16 +43,16 @@ from rq import Queue
 from rq_scheduler import Scheduler
 from redis import Redis
 from z4j_bare import install_agent
-from z4j_rq import RQEngineAdapter
-from z4j_rqscheduler import RQSchedulerAdapter
+from z4j_rq import RqEngineAdapter
+from z4j_rqscheduler import RqSchedulerAdapter
 
 redis = Redis(host="localhost")
 queue = Queue(connection=redis)
 scheduler = Scheduler(queue=queue, connection=redis)
 
 install_agent(
-    engines=[RQEngineAdapter(queues=[queue])],
-    schedulers=[RQSchedulerAdapter(scheduler=scheduler)],
+    engines=[RqEngineAdapter(rq_app=queue)],
+    schedulers=[RqSchedulerAdapter(scheduler=scheduler)],
     brain_url="https://brain.example.com",
     token="z4j_agent_...",
     project_id="my-project",

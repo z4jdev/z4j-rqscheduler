@@ -68,7 +68,7 @@ class RqSchedulerAdapter:
     # projection; no per-change signal is fired.
     # ------------------------------------------------------------------
 
-    def connect_signals(self, sink: Any) -> None:  # noqa: ARG002  (no-op)
+    def connect_signals(self, sink: Any) -> None:
         """rq-scheduler has no change-signal story - no-op.
 
         The runtime's periodic reconciliation (Phase 1.1) will call
@@ -86,14 +86,14 @@ class RqSchedulerAdapter:
     async def list_schedules(self) -> list[Schedule]:
         try:
             jobs = list(self.scheduler.get_jobs())
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("z4j rq-scheduler: get_jobs failed")
             return []
         out: list[Schedule] = []
         for job in jobs:
             try:
                 out.append(self._to_schedule(job))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception(
                     "z4j rq-scheduler: failed to map job %r",
                     getattr(job, "id", "?"),
@@ -103,13 +103,13 @@ class RqSchedulerAdapter:
     async def get_schedule(self, schedule_id: str) -> Schedule | None:
         try:
             jobs = list(self.scheduler.get_jobs())
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         for job in jobs:
             if _safe_str(getattr(job, "id", "")) == schedule_id:
                 try:
                     return self._to_schedule(job)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     return None
         return None
 
@@ -118,28 +118,32 @@ class RqSchedulerAdapter:
     # ------------------------------------------------------------------
 
     async def create_schedule(self, spec: Schedule) -> Schedule:
-        # Deferred to v1.1 - capabilities() omits "create" so the
+        # Not supported - capabilities() omits "create" so the
         # dashboard hides the button. If the brain bypasses the gate
         # we fail loudly.
         raise NotImplementedError(
-            "create_schedule is deferred to v1.1 for rq-scheduler; "
+            "z4j-rqscheduler does not create schedules remotely; "
             "create schedules via your project's Python entrypoint "
-            "(scheduler.cron(...) / scheduler.schedule(...)) for now.",
+            "(scheduler.cron(...) / scheduler.schedule(...)).",
         )
 
     async def update_schedule(
-        self, schedule_id: str, spec: Schedule,
-    ) -> Schedule:  # noqa: ARG002
+        self,
+        schedule_id: str,
+        spec: Schedule,
+    ) -> Schedule:
         raise NotImplementedError(
-            "update_schedule is deferred to v1.1 for rq-scheduler.",
+            "z4j-rqscheduler does not update schedules remotely; "
+            "edit the definition in your project's Python entrypoint.",
         )
 
     async def delete_schedule(self, schedule_id: str) -> CommandResult:
         try:
             jobs = list(self.scheduler.get_jobs())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return CommandResult(
-                status="failed", error=f"get_jobs failed: {exc}",
+                status="failed",
+                error=f"get_jobs failed: {exc}",
             )
         target = None
         for job in jobs:
@@ -155,9 +159,10 @@ class RqSchedulerAdapter:
             )
         try:
             self.scheduler.cancel(target)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return CommandResult(
-                status="failed", error=f"cancel failed: {exc}",
+                status="failed",
+                error=f"cancel failed: {exc}",
             )
         return CommandResult(
             status="success",
@@ -213,9 +218,10 @@ class RqSchedulerAdapter:
                 *list(getattr(target, "args", [])),
                 **dict(getattr(target, "kwargs", {})),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return CommandResult(
-                status="failed", error=f"trigger_now failed: {exc}",
+                status="failed",
+                error=f"trigger_now failed: {exc}",
             )
         return CommandResult(
             status="success",
@@ -240,17 +246,25 @@ class RqSchedulerAdapter:
         now = datetime.now(UTC)
         sched_id = _safe_str(getattr(job, "id", "")) or str(uuid4())
         cron_expr = _safe_str(
-            getattr(job, "meta", {}).get("cron_string", "") if isinstance(
-                getattr(job, "meta", None), dict,
-            ) else "",
+            getattr(job, "meta", {}).get("cron_string", "")
+            if isinstance(
+                getattr(job, "meta", None),
+                dict,
+            )
+            else "",
         )
         if cron_expr:
             kind = ScheduleKind.CRON
             expression = cron_expr
         else:
-            interval = getattr(job, "meta", {}).get("interval") if isinstance(
-                getattr(job, "meta", None), dict,
-            ) else None
+            interval = (
+                getattr(job, "meta", {}).get("interval")
+                if isinstance(
+                    getattr(job, "meta", None),
+                    dict,
+                )
+                else None
+            )
             if interval:
                 kind = ScheduleKind.INTERVAL
                 expression = _safe_str(interval)
@@ -259,8 +273,7 @@ class RqSchedulerAdapter:
                 kind = ScheduleKind.CLOCKED
                 scheduled_for = getattr(job, "scheduled_for", None)
                 expression = (
-                    scheduled_for.isoformat()
-                    if isinstance(scheduled_for, datetime) else "unknown"
+                    scheduled_for.isoformat() if isinstance(scheduled_for, datetime) else "unknown"
                 )
 
         return Schedule(
@@ -295,7 +308,7 @@ def _safe_str(value: Any) -> str:
         return ""
     try:
         return str(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
 
 
@@ -303,8 +316,9 @@ def _safe_uuid(value: str) -> UUID:
     """Deterministic UUID5 from a string id so the brain can dedupe."""
     try:
         return UUID(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         import uuid as _uuid
+
         return _uuid.uuid5(_uuid.NAMESPACE_OID, value)
 
 

@@ -36,11 +36,19 @@ class FakeScheduler:
         self._jobs = [j for j in self._jobs if j.id != job.id]
 
     def enqueue_in(self, td: timedelta, func_name: str, *args, **kwargs):
-        new = FakeJob(id=f"new-{len(self.enqueued) + 1}", func_name=func_name,
-                      args=tuple(args), kwargs=dict(kwargs))
+        new = FakeJob(
+            id=f"new-{len(self.enqueued) + 1}",
+            func_name=func_name,
+            args=tuple(args),
+            kwargs=dict(kwargs),
+        )
         self.enqueued.append(
-            {"td_s": td.total_seconds(), "func": func_name,
-             "args": tuple(args), "kwargs": dict(kwargs)},
+            {
+                "td_s": td.total_seconds(),
+                "func": func_name,
+                "args": tuple(args),
+                "kwargs": dict(kwargs),
+            },
         )
         return new
 

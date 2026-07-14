@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
 from z4j_core.models import ScheduleKind
 from z4j_core.protocols import SchedulerAdapter
-
 from z4j_rqscheduler import RqSchedulerAdapter
 from z4j_rqscheduler.capabilities import DEFAULT_CAPABILITIES
 
@@ -23,8 +21,11 @@ class TestProtocolConformance:
 
 class TestCapabilities:
     def test_frozen_set(self):
-        assert DEFAULT_CAPABILITIES == frozenset(
-            {"list", "enable", "disable", "trigger_now", "delete"},
+        assert (
+            frozenset(
+                {"list", "enable", "disable", "trigger_now", "delete"},
+            )
+            == DEFAULT_CAPABILITIES
         )
 
     def test_create_update_absent(self):
@@ -39,7 +40,8 @@ class TestList:
         items = await adapter.list_schedules()
         assert len(items) == 2
         assert {s.name for s in items} == {
-            "myapp.tasks.nightly", "myapp.tasks.refresh",
+            "myapp.tasks.nightly",
+            "myapp.tasks.refresh",
         }
 
     @pytest.mark.asyncio
@@ -97,6 +99,7 @@ class TestTriggerNow:
     @pytest.mark.asyncio
     async def test_missing_id_raises_notfound(self, scheduler):
         from z4j_core.errors import NotFoundError
+
         adapter = RqSchedulerAdapter(scheduler=scheduler)
         with pytest.raises(NotFoundError):
             await adapter.trigger_now("ghost")
