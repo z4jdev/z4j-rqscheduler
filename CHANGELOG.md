@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.0 (2026-07-23)
+
+* `trigger_now` and `get_schedule` offload their Redis I/O off the agent loop (the pre-offload synchronous scan is gone) so a Redis incident can no longer freeze it; a timed-out mutation is reported indeterminate.
+* Part of the coordinated 1.8.0 fleet release (unified fleet version, green lint/format/import-boundary gate).
+
 ## 1.7.0 (2026-07-07)
 
 * README corrected to `RqSchedulerAdapter` and `RqEngineAdapter(rq_app=...)`.

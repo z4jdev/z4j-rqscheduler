@@ -27,6 +27,11 @@ from uuid import UUID, uuid4
 from z4j_core.errors import NotFoundError
 from z4j_core.models import CommandResult, Schedule, ScheduleKind
 
+from z4j_rqscheduler._offload import (
+    OffloadTimeoutError,
+    indeterminate_timeout_result,
+    offload,
+)
 from z4j_rqscheduler.capabilities import DEFAULT_CAPABILITIES
 
 logger = logging.getLogger("z4j.adapter.rqscheduler.scheduler")
@@ -84,11 +89,12 @@ class RqSchedulerAdapter:
     # ------------------------------------------------------------------
 
     async def list_schedules(self) -> list[Schedule]:
-        try:
-            jobs = list(self.scheduler.get_jobs())
-        except Exception:
-            logger.exception("z4j rq-scheduler: get_jobs failed")
-            return []
+        # RM6: get_jobs() is synchronous redis-py I/O; offload it so a slow
+        # Redis cannot freeze the agent loop (matches get_schedule). A timeout
+        # or broker error PROPAGATES rather than returning [] -- an empty list
+        # would let a reconcile delete every schedule (RM5). Only per-job
+        # mapping errors are tolerated below.
+        jobs = await offload(_list_jobs, self.scheduler, timeout=10.0)
         out: list[Schedule] = []
         for job in jobs:
             try:
@@ -101,9 +107,18 @@ class RqSchedulerAdapter:
         return out
 
     async def get_schedule(self, schedule_id: str) -> Schedule | None:
+        # M15: get_jobs() is a synchronous redis-py zrange plus one Job.fetch
+        # per scheduled job. trigger_now() calls this BEFORE its own offloaded
+        # section, so leaving the scan inline on the event loop reintroduced
+        # the exact loop-freeze on a hung/slow Redis that the offload exists
+        # to prevent (heartbeats, command polling, and every other adapter
+        # would stall at the lookup, before the 10s timeout could ever fire).
+        # Offload the scan under the same timeout.
         try:
-            jobs = list(self.scheduler.get_jobs())
+            jobs = await offload(_list_jobs, self.scheduler, timeout=10.0)
         except Exception:
+            # OffloadTimeoutError (a slow Redis) and any broker error both
+            # resolve to "schedule not resolvable right now" -> None.
             return None
         for job in jobs:
             if _safe_str(getattr(job, "id", "")) == schedule_id:
@@ -138,8 +153,22 @@ class RqSchedulerAdapter:
         )
 
     async def delete_schedule(self, schedule_id: str) -> CommandResult:
+        # M4: get_jobs() (read) and cancel() (mutation) are synchronous
+        # redis-py calls; offload both so a slow Redis cannot freeze the agent
+        # loop. A read timeout is a clean, retryable failure; a cancel timeout
+        # is indeterminate (the cancel may still have landed).
         try:
-            jobs = list(self.scheduler.get_jobs())
+            # RM3: offload(get_jobs) returns rq-scheduler's LAZY generator;
+            # list()-ing it here drove one redis-py Job.fetch per job back on
+            # the event loop, defeating the offload. _list_jobs materialises
+            # the full list INSIDE the worker thread (same helper get_schedule
+            # / list_schedules use).
+            jobs = await offload(_list_jobs, self.scheduler, timeout=10.0)
+        except OffloadTimeoutError:
+            return CommandResult(
+                status="failed",
+                error="get_jobs timed out reading the schedule set (safe to retry)",
+            )
         except Exception as exc:
             return CommandResult(
                 status="failed",
@@ -158,7 +187,11 @@ class RqSchedulerAdapter:
                 result={"schedule_id": schedule_id, "noop": True},
             )
         try:
-            self.scheduler.cancel(target)
+            await offload(self.scheduler.cancel, target, timeout=10.0)
+        except OffloadTimeoutError:
+            return indeterminate_timeout_result(
+                "delete_schedule", 10.0, hint="the cancel may still have landed"
+            )
         except Exception as exc:
             return CommandResult(
                 status="failed",
@@ -197,31 +230,34 @@ class RqSchedulerAdapter:
         if sched is None:
             raise NotFoundError(f"schedule {schedule_id!r} not found")
 
+        # get_jobs() + enqueue_in() are synchronous redis-py calls; run them
+        # on the dedicated broker-offload pool under a timeout so a slow /
+        # failing Redis cannot freeze the agent event loop OR starve its
+        # heartbeat providers (isolated from the default executor).
         try:
-            from datetime import timedelta
-
-            # Pull the raw job so we can re-enqueue it immediately.
-            jobs = list(self.scheduler.get_jobs())
-            target = None
-            for job in jobs:
-                if _safe_str(getattr(job, "id", "")) == schedule_id:
-                    target = job
-                    break
-            if target is None:
-                return CommandResult(
-                    status="failed",
-                    error=f"schedule {schedule_id!r} vanished between lookup and trigger",
-                )
-            new_job = self.scheduler.enqueue_in(
-                timedelta(0),
-                target.func_name,
-                *list(getattr(target, "args", [])),
-                **dict(getattr(target, "kwargs", {})),
+            new_job = await offload(
+                _sync_trigger_now,
+                self.scheduler,
+                schedule_id,
+                timeout=10.0,
+            )
+        except OffloadTimeoutError:
+            # The enqueue may still have reached Redis; report
+            # indeterminate rather than a clean failure.
+            return indeterminate_timeout_result(
+                "trigger_now",
+                10.0,
+                hint="the job may still have been enqueued",
             )
         except Exception as exc:
             return CommandResult(
                 status="failed",
                 error=f"trigger_now failed: {exc}",
+            )
+        if new_job is None:
+            return CommandResult(
+                status="failed",
+                error=f"schedule {schedule_id!r} vanished between lookup and trigger",
             )
         return CommandResult(
             status="success",
@@ -301,6 +337,32 @@ class RqSchedulerAdapter:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _list_jobs(scheduler: Any) -> list[Any]:
+    """Synchronous ``list(scheduler.get_jobs())`` -- runs on the offload pool.
+
+    M15: kept as a top-level function (not an inline lambda) so it is a clean
+    picklable-free target for the executor and reads the same in every caller.
+    """
+    return list(scheduler.get_jobs())
+
+
+def _sync_trigger_now(scheduler: Any, schedule_id: str) -> Any | None:
+    """Synchronous re-enqueue of a scheduled RQ job (runs in an executor
+    thread; see ``trigger_now``). Returns the new job, or None if the
+    schedule vanished between lookup and trigger."""
+    from datetime import timedelta
+
+    for job in scheduler.get_jobs():
+        if _safe_str(getattr(job, "id", "")) == schedule_id:
+            return scheduler.enqueue_in(
+                timedelta(0),
+                job.func_name,
+                *list(getattr(job, "args", [])),
+                **dict(getattr(job, "kwargs", {})),
+            )
+    return None
 
 
 def _safe_str(value: Any) -> str:
