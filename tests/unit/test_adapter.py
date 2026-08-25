@@ -23,7 +23,7 @@ class TestCapabilities:
     def test_frozen_set(self):
         assert (
             frozenset(
-                {"list", "enable", "disable", "trigger_now", "delete"},
+                {"list", "disable", "trigger_now", "delete"},
             )
             == DEFAULT_CAPABILITIES
         )
@@ -31,6 +31,7 @@ class TestCapabilities:
     def test_create_update_absent(self):
         assert "create" not in DEFAULT_CAPABILITIES
         assert "update" not in DEFAULT_CAPABILITIES
+        assert "enable" not in DEFAULT_CAPABILITIES
 
 
 class TestList:
@@ -67,6 +68,23 @@ class TestList:
         for s in items:
             assert s.engine == "rq"
             assert s.scheduler == "rq-scheduler"
+
+    @pytest.mark.asyncio
+    async def test_mapping_failure_aborts_authoritative_snapshot(self, scheduler, monkeypatch):
+        adapter = RqSchedulerAdapter(scheduler=scheduler)
+        original = adapter._to_schedule
+        calls = 0
+
+        def fail_second(job):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise ValueError("malformed rq schedule")
+            return original(job)
+
+        monkeypatch.setattr(adapter, "_to_schedule", fail_second)
+        with pytest.raises(ValueError, match="malformed rq schedule"):
+            await adapter.list_schedules()
 
 
 class TestDelete:
@@ -112,6 +130,12 @@ class TestEnableDisable:
         result = await adapter.disable_schedule("job-cron-1")
         assert result.status == "success"
         assert "job-cron-1" in scheduler.cancelled
+
+        # rq-scheduler has no paused definition to resume. Disable cancels
+        # and removes the job, so a subsequent enable cannot restore it.
+        enabled = await adapter.enable_schedule("job-cron-1")
+        assert enabled.status == "failed"
+        assert "not found" in enabled.error
 
     @pytest.mark.asyncio
     async def test_enable_succeeds_when_job_present(self, scheduler):

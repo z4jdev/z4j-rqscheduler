@@ -5,14 +5,15 @@ the `rq-scheduler`_ library. v1 surface is read-heavy:
 
 - ``list`` - walk the `rq:scheduler:scheduled_jobs` Redis zset
 - ``get_schedule`` - fetch a single scheduled Job by id
-- ``enable`` / ``disable`` - toggle via the scheduler's
-  ``enqueue_in(0, ...)`` pause/resume pattern
+- ``disable`` - cancel the scheduled job, which removes it from the
+  scheduler rather than preserving a paused definition
+- ``enable`` - compatibility method only; not advertised because it cannot
+  restore a job removed by ``disable``
 - ``trigger_now`` - enqueue the job immediately via
   ``scheduler.enqueue_in(timedelta(0), ...)``
 - ``delete`` - ``scheduler.cancel(job)``
 
-Write surface (``create``, ``update``) is deferred to v1.1 - the
-dashboard's schedule-creation UX lives on the Celery track first.
+Write surface (``create``, ``update``) is not supported.
 
 .. _rq-scheduler: https://github.com/rq/rq-scheduler
 """
@@ -76,8 +77,9 @@ class RqSchedulerAdapter:
     def connect_signals(self, sink: Any) -> None:
         """rq-scheduler has no change-signal story - no-op.
 
-        The runtime's periodic reconciliation (Phase 1.1) will call
-        :meth:`list_schedules` to refresh the brain's snapshot.
+        The agent runtime calls :meth:`list_schedules` at startup, on its
+        configured periodic reconciliation cadence, and on an explicit
+        resync command.
         """
         return
 
@@ -92,8 +94,9 @@ class RqSchedulerAdapter:
         # RM6: get_jobs() is synchronous redis-py I/O; offload it so a slow
         # Redis cannot freeze the agent loop (matches get_schedule). A timeout
         # or broker error PROPAGATES rather than returning [] -- an empty list
-        # would let a reconcile delete every schedule (RM5). Only per-job
-        # mapping errors are tolerated below.
+        # would let a reconcile delete every schedule (RM5). A per-job mapping
+        # error also aborts the whole snapshot: omitting one job would make the
+        # authoritative reconcile delete exactly that still-live schedule.
         jobs = await offload(_list_jobs, self.scheduler, timeout=10.0)
         out: list[Schedule] = []
         for job in jobs:
@@ -101,9 +104,10 @@ class RqSchedulerAdapter:
                 out.append(self._to_schedule(job))
             except Exception:
                 logger.exception(
-                    "z4j rq-scheduler: failed to map job %r",
+                    "z4j rq-scheduler: failed to map job %r; skipping this authoritative snapshot",
                     getattr(job, "id", "?"),
                 )
+                raise
         return out
 
     async def get_schedule(self, schedule_id: str) -> Schedule | None:

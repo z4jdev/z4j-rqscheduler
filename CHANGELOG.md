@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0 (2026-08-25)
+
+* Authoritative inventory failures now abort the snapshot instead of returning
+  an empty or partial list that could false-delete live schedules in the brain.
+* `enable` is no longer advertised. rq-scheduler's disable operation cancels
+  and removes a job, and the adapter cannot restore that definition.
+
 ## 1.8.0 (2026-07-23)
 
 * `trigger_now` and `get_schedule` offload their Redis I/O off the agent loop (the pre-offload synchronous scan is gone) so a Redis incident can no longer freeze it; a timed-out mutation is reported indeterminate.
