@@ -14,7 +14,7 @@ dashboard's Schedules page, read, trigger, disable (cancel), delete.
 - rq-scheduler 0.11+ (no upper cap)
 - Python 3.11+
 
-Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
+Full per-adapter matrix at <https://docs.z4j.com/reference/compatibility/>.
 
 ## What it ships
 
@@ -78,7 +78,7 @@ install_agent(
 
 ## Documentation
 
-Full docs at [z4j.dev/schedulers/rq-scheduler/](https://z4j.dev/schedulers/rq-scheduler/).
+Full docs at [docs.z4j.com/schedulers/rq-scheduler/](https://docs.z4j.com/schedulers/rq-scheduler/).
 
 ## License
 
@@ -87,7 +87,7 @@ Apache-2.0, see [LICENSE](LICENSE).
 ## Links
 
 - Homepage: https://z4j.com
-- Documentation: https://z4j.dev
+- Documentation: https://docs.z4j.com
 - PyPI: https://pypi.org/project/z4j-rqscheduler/
 - Issues: https://github.com/z4jdev/z4j-rqscheduler/issues
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
