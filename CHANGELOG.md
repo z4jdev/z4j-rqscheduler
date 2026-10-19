@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.0 (2026-10-19)
+
+- Add managed Redis schedule CRUD with persistent pause state and transactional dispatch. Register control on every producer sharing the native registry.
+
 ## 1.12.0 (2026-10-03)
 
 * Carried with the coordinated fleet release. No behaviour changed.

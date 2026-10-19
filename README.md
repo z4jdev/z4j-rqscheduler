@@ -1,94 +1,77 @@
 # z4j-rqscheduler
 
-[![PyPI version](https://img.shields.io/pypi/v/z4j-rqscheduler.svg)](https://pypi.org/project/z4j-rqscheduler/)
-[![Python](https://img.shields.io/pypi/pyversions/z4j-rqscheduler.svg)](https://pypi.org/project/z4j-rqscheduler/)
-[![License](https://img.shields.io/pypi/l/z4j-rqscheduler.svg)](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)
-
-The rq-scheduler adapter for [z4j](https://z4j.com).
-
-Surfaces rq-scheduler periodic / interval / cron jobs on the
-dashboard's Schedules page, read, trigger, disable (cancel), delete.
+The native RQ Scheduler adapter for [z4j](https://z4j.com), with dashboard management
+of native schedules. Dashboard management needs the z4j server, `z4j-core`, `z4j-bare`
+and this adapter from the same release, plus the producer setup below.
 
 ## Compatibility
 
-- rq-scheduler 0.11+ (no upper cap)
-- Python 3.11+
+rq-scheduler 0.11+ and the RQ version required by z4j-rq; Python 3.11+.
 
-Full per-adapter matrix at <https://docs.z4j.com/reference/compatibility/>.
+## Installation and producer setup
 
-## What it ships
-
-| Capability | Notes |
-|---|---|
-| List schedules | every job rq-scheduler currently tracks |
-| Disable | cancels the scheduled job (rq-scheduler has no enabled flag); re-enable by re-registering it from your code |
-| Trigger now | enqueues the task immediately, outside the schedule |
-| Delete | clean removal from the rq-scheduler set |
-| Boot inventory | full snapshot at agent connect; existing schedules show up without editing |
-
-Schedule **create** and **update** are not yet supported from the
-dashboard for rq-scheduler, so the brain greys those actions out.
-Define schedules in your project's Python entrypoint
-(`scheduler.cron(...)` / `scheduler.schedule(...)`); z4j inventories them and
-exposes the supported trigger, disable, and delete controls once they exist.
-Enable is not advertised because a cancelled definition cannot be restored by
-rq-scheduler; re-register it from application code instead.
-
-## Install
-
-```bash
-pip install z4j-rq z4j-rqscheduler
-```
+Install `z4j-rqscheduler` and `z4j-bare` from the same release wave, plus the native
+scheduler and broker/store dependencies used by your application. The example
+assumes your task code, writable application-state directory and agent credentials
+already exist. Use the project UUID from agent registration.
 
 ```python
 import os
-
-from rq import Queue
-from rq_scheduler import Scheduler
 from redis import Redis
+from rq_scheduler import Scheduler
 from z4j_bare import install_agent
-from z4j_rq import RqEngineAdapter
 from z4j_rqscheduler import RqSchedulerAdapter
+from myapp.jobs import cleanup
 
-redis = Redis(host="localhost")
-queue = Queue(connection=redis)
-scheduler = Scheduler(queue=queue, connection=redis)
-
-install_agent(
-    engines=[RqEngineAdapter(rq_app=queue)],
-    schedulers=[RqSchedulerAdapter(scheduler=scheduler)],
-    brain_url="https://brain.example.com",
-    token="z4j_agent_...",
-    project_id="my-project",
-    hmac_secret=os.environ["Z4J_HMAC_SECRET"],
+scheduler = Scheduler(connection=Redis.from_url(os.environ["REDIS_URL"]), queue_name="default")
+adapter = RqSchedulerAdapter(
+    scheduler=scheduler, managed=True, tasks={"myapp.cleanup": cleanup},
 )
+agent = install_agent(
+    engines=[], schedulers=[adapter],
+    brain_url=os.environ["Z4J_BRAIN_URL"], token=os.environ["Z4J_TOKEN"],
+    hmac_secret=os.environ["Z4J_HMAC_SECRET"], project_id=os.environ["Z4J_PROJECT_ID"],
+)
+try:
+    scheduler.run()
+finally:
+    agent.stop()
 ```
 
-## Pairs with
+Every producer sharing this Redis schedule registry must install `managed=True`.
+The ordinary uninstrumented rq-scheduler CLI must not run alongside it. The
+managed producer uses Redis transactions to arbitrate dispatch against edits
+and pauses. Redis retains definitions and a separate paused registry, so a
+producer restart preserves both. Configure Redis persistence for Redis restarts.
+An adapter with the default `managed=False` provides inventory and manual runs;
+it does not advertise dashboard writes.
 
-- [`z4j-rq`](https://github.com/z4jdev/z4j-rq), engine adapter
+## Dashboard controls
 
-## Reliability
+The connected producer supports inventory, create, edit, pause, resume, delete
+and **Run now**. A write is complete only after z4j accepts a snapshot confirming
+the native source. The dashboard uses the current connection's advertised
+capabilities; an unavailable producer cannot accept new edits. Repeating an
+operation ID does not submit it twice. A timeout or uncertain outcome requires
+inspection before submitting a new request.
 
-- rq-scheduler has no registry-change signal, so z4j refreshes inventory at
-  boot and during periodic reconciliation.
-- Redis calls run on the adapter's bounded offload pool. A mutation that
-  exceeds its 10-second timeout is reported as indeterminate because the
-  worker thread may still complete it.
+A pause prevents future scheduling. Work already queued or running can finish.
+Run now submits an additional execution without resuming a paused schedule.
+Native scheduling keeps the upstream scheduler's timing and delivery semantics;
+it does not acquire z4j-scheduler's catch-up, overlap or exactly-once guarantees.
+Queue task history requires the corresponding engine adapter in the workers.
 
-## Documentation
+## Supported definitions and limits
 
-Full docs at [docs.z4j.com/schedulers/rq-scheduler/](https://docs.z4j.com/schedulers/rq-scheduler/).
-
-## License
-
-Apache-2.0, see [LICENSE](LICENSE).
+- Create/edit supports native cron, positive integer interval seconds and offset-aware one-shot datetimes, in UTC.
+- Queue selection is supported; an RQ worker must consume the selected queue.
+- `tasks={name: callable}` registers new task choices. Existing jobs also supply their registered function reference; arbitrary dashboard imports are not accepted.
+- Pause preserves the scheduled definition. Resume reactivates it. Delete removes scheduling without deleting execution history.
+- Run now enqueues immediately without adding a second schedule or resetting the repeat cadence.
 
 ## Links
 
-- Homepage: https://z4j.com
-- Documentation: https://docs.z4j.com
-- PyPI: https://pypi.org/project/z4j-rqscheduler/
-- Issues: https://github.com/z4jdev/z4j-rqscheduler/issues
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Security: security@z4j.com (see [SECURITY.md](SECURITY.md))
+- [Documentation](https://docs.z4j.com/schedulers/rq-scheduler/)
+- [Changelog](https://github.com/z4jdev/z4j-rqscheduler/blob/main/CHANGELOG.md)
+- [Security policy](https://github.com/z4jdev/z4j-rqscheduler/blob/main/SECURITY.md); report vulnerabilities to security@z4j.com
+- [Apache-2.0 license](https://github.com/z4jdev/z4j-rqscheduler/blob/main/LICENSE)

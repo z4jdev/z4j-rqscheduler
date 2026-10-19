@@ -13,8 +13,10 @@ policy, and published advisories are maintained in the
 
 ## Security-critical surface
 
-This adapter runs with rq-scheduler's Redis access. An authenticated brain can
-trigger, cancel/disable, and delete scheduled jobs through the advertised
-controls. Job lookup, argument projection, Redis mutation, and indeterminate
-timeouts are package-specific security surfaces; transport, redaction, and
-authorization policy remain owned by `z4j-core` and the brain.
+This adapter inventories and controls the host application's native scheduler.
+Signed commands are bound to the current producer connection and compare the
+observed definition before mutation. Dashboard task choices must resolve to
+registered application tasks; control must never import arbitrary operator input.
+Native state changes, task arguments, manual dispatch and source-confirmed
+receipts are package-specific security surfaces. Transport, redaction and
+project authorization remain owned by `z4j-core`, `z4j-bare` and the brain.

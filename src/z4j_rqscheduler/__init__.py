@@ -17,6 +17,6 @@ try:
 
     __version__ = _pkg_version("z4j-rqscheduler")
 except PackageNotFoundError:  # source checkout, no installed metadata
-    from z4j_core.version import __version__  # type: ignore[no-redef]
+    from z4j_core.version import __version__
 
 __all__ = ["RqSchedulerAdapter", "__version__"]

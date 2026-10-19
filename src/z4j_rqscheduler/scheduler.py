@@ -1,22 +1,7 @@
-"""The :class:`RqSchedulerAdapter` - SchedulerAdapter for rq-scheduler.
+"""Native RQ inventory and transactional dashboard control.
 
-Implements :class:`z4j_core.protocols.SchedulerAdapter` on top of
-the `rq-scheduler`_ library. v1 surface is read-heavy:
-
-- ``list`` - walk the `rq:scheduler:scheduled_jobs` Redis zset
-- ``get_schedule`` - fetch a single scheduled Job by id
-- ``disable`` - cancel the scheduled job, which removes it from the
-  scheduler rather than preserving a paused definition
-- ``enable`` - compatibility method only; not advertised because it cannot
-  restore a job removed by ``disable``
-- ``trigger_now`` - enqueue the job immediately via
-  ``scheduler.enqueue_in(timedelta(0), ...)``
-- ``delete`` - ``scheduler.cancel(job)``
-
-Write surface (``create``, ``update``) is not supported.
-
-.. _rq-scheduler: https://github.com/rq/rq-scheduler
-"""
+Managed producers preserve pause state and arbitrate edits against dispatch.
+External changes are discovered on the configured periodic reconciliation cadence."""
 
 from __future__ import annotations
 
@@ -27,6 +12,11 @@ from uuid import UUID, uuid4
 
 from z4j_core.errors import NotFoundError
 from z4j_core.models import CommandResult, Schedule, ScheduleKind
+from z4j_core.native_schedule_operations import direct_native_mutation
+from z4j_core.schedule_external import (
+    EXTERNAL_SCHEDULE_MUTATION_CAPABILITY,
+    EXTERNAL_SCHEDULE_STABLE_SNAPSHOT_CAPABILITY,
+)
 
 from z4j_rqscheduler._offload import (
     OffloadTimeoutError,
@@ -34,6 +24,7 @@ from z4j_rqscheduler._offload import (
     offload,
 )
 from z4j_rqscheduler.capabilities import DEFAULT_CAPABILITIES
+from z4j_rqscheduler.native import NativeRqControl
 
 logger = logging.getLogger("z4j.adapter.rqscheduler.scheduler")
 
@@ -63,9 +54,20 @@ class RqSchedulerAdapter:
         *,
         scheduler: Any,
         project_id: UUID | None = None,
+        managed: bool = False,
+        tasks: dict[str, Any] | None = None,
     ) -> None:
         self.scheduler = scheduler
         self._project_id = project_id or uuid4()
+        from rq_scheduler import Scheduler
+
+        self._native = (
+            NativeRqControl(scheduler, self._project_id, managed=managed, tasks=dict(tasks or {}))
+            if type(scheduler) is Scheduler
+            else None
+        )
+        if managed and self._native is None:
+            raise ValueError("managed native control requires rq_scheduler.Scheduler")
 
     # ------------------------------------------------------------------
     # Lifecycle - rq-scheduler doesn't emit registry-change events
@@ -91,6 +93,8 @@ class RqSchedulerAdapter:
     # ------------------------------------------------------------------
 
     async def list_schedules(self) -> list[Schedule]:
+        if self._native is not None:
+            return await offload(self._native.snapshot, timeout=10)
         # RM6: get_jobs() is synchronous redis-py I/O; offload it so a slow
         # Redis cannot freeze the agent loop (matches get_schedule). A timeout
         # or broker error PROPAGATES rather than returning [] -- an empty list
@@ -111,6 +115,15 @@ class RqSchedulerAdapter:
         return out
 
     async def get_schedule(self, schedule_id: str) -> Schedule | None:
+        if self._native is not None:
+            return next(
+                (
+                    row
+                    for row in await self.list_schedules()
+                    if schedule_id in {str(row.id), row.external_id}
+                ),
+                None,
+            )
         # M15: get_jobs() is a synchronous redis-py zrange plus one Job.fetch
         # per scheduled job. trigger_now() calls this BEFORE its own offloaded
         # section, so leaving the scan inline on the event loop reintroduced
@@ -137,6 +150,10 @@ class RqSchedulerAdapter:
     # ------------------------------------------------------------------
 
     async def create_schedule(self, spec: Schedule) -> Schedule:
+        if self._native is not None and self._native.managed:
+            result = await direct_native_mutation(self, "create", None, spec)
+            assert isinstance(result, Schedule)
+            return result
         # Not supported - capabilities() omits "create" so the
         # dashboard hides the button. If the brain bypasses the gate
         # we fail loudly.
@@ -151,12 +168,20 @@ class RqSchedulerAdapter:
         schedule_id: str,
         spec: Schedule,
     ) -> Schedule:
+        if self._native is not None and self._native.managed:
+            result = await direct_native_mutation(self, "update", schedule_id, spec)
+            assert isinstance(result, Schedule)
+            return result
         raise NotImplementedError(
             "z4j-rqscheduler does not update schedules remotely; "
             "edit the definition in your project's Python entrypoint.",
         )
 
-    async def delete_schedule(self, schedule_id: str) -> CommandResult:
+    async def delete_schedule(self, schedule_id: str) -> CommandResult:  # noqa: PLR0911 - native and compatibility error paths
+        if self._native is not None and self._native.managed:
+            result = await direct_native_mutation(self, "delete", schedule_id)
+            assert isinstance(result, CommandResult)
+            return result
         # M4: get_jobs() (read) and cancel() (mutation) are synchronous
         # redis-py calls; offload both so a slow Redis cannot freeze the agent
         # loop. A read timeout is a clean, retryable failure; a cancel timeout
@@ -207,6 +232,10 @@ class RqSchedulerAdapter:
         )
 
     async def enable_schedule(self, schedule_id: str) -> CommandResult:
+        if self._native is not None and self._native.managed:
+            result = await direct_native_mutation(self, "update", schedule_id, enabled=True)
+            assert isinstance(result, CommandResult)
+            return result
         # rq-scheduler doesn't have a first-class enabled/disabled
         # flag - disabling means "cancel the scheduled job". Enable
         # therefore only makes sense if the underlying job is still
@@ -223,6 +252,10 @@ class RqSchedulerAdapter:
         )
 
     async def disable_schedule(self, schedule_id: str) -> CommandResult:
+        if self._native is not None and self._native.managed:
+            result = await direct_native_mutation(self, "update", schedule_id, enabled=False)
+            assert isinstance(result, CommandResult)
+            return result
         # Same disclaimer as enable - disable maps to delete in
         # rq-scheduler. We preserve the original call semantics and
         # let the brain decide whether to surface this as disabled
@@ -230,6 +263,14 @@ class RqSchedulerAdapter:
         return await self.delete_schedule(schedule_id)
 
     async def trigger_now(self, schedule_id: str) -> CommandResult:
+        if self._native is not None:
+            try:
+                task_id = await offload(self._native.trigger, schedule_id, timeout=10)
+                return CommandResult(status="success", result={"task_id": task_id})
+            except OffloadTimeoutError:
+                return indeterminate_timeout_result(
+                    "trigger_now", 10, hint="inspect the queue before retrying"
+                )
         sched = await self.get_schedule(schedule_id)
         if sched is None:
             raise NotFoundError(f"schedule {schedule_id!r} not found")
@@ -276,7 +317,35 @@ class RqSchedulerAdapter:
     # ------------------------------------------------------------------
 
     def capabilities(self) -> set[str]:
-        return set(DEFAULT_CAPABILITIES)
+        caps = set(DEFAULT_CAPABILITIES)
+        if self._native is not None:
+            caps.discard("disable")
+            caps.add(EXTERNAL_SCHEDULE_STABLE_SNAPSHOT_CAPABILITY)
+            if self._native.managed:
+                caps.update(
+                    {EXTERNAL_SCHEDULE_MUTATION_CAPABILITY, "create", "update", "enable", "disable"}
+                )
+        return caps
+
+    async def apply_external_mutation(
+        self,
+        *,
+        operation: str,
+        schedule_id: str | None,
+        expected: dict[str, Any] | None,
+        definition: dict[str, Any],
+    ) -> Schedule | None:
+        """Apply one Redis compare-and-set with the cooperating RQ producer."""
+        if self._native is None:
+            raise ValueError("native RQ control requires a real rq_scheduler.Scheduler")
+        return await offload(
+            self._native.mutate,
+            operation=operation,
+            schedule_id=schedule_id,
+            expected=expected,
+            definition=definition,
+            timeout=10,
+        )
 
     # ------------------------------------------------------------------
     # Internal: Job → Schedule projection
